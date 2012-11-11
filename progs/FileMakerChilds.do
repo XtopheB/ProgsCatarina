@@ -1,6 +1,6 @@
-/* 25/10/2010 :  Creation des fichiers des individus à partir des fichiers ménages */
-/*  			On utilise les fichiers Household2001  -2010.dta  en entrée        */
-/* 				création des fichiers ou seuls les ménages avec enfants sont retenus*/
+/* 25/10/2010 :  Creation des fichiers des individus a partir des fichiers menages */
+/*  			On utilise les fichiers Household2001  -2010.dta  en entree        */
+/* 				creation des fichiers ou seuls les menages avec enfants sont retenus*/
 
 
 set more off
