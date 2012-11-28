@@ -1,9 +1,14 @@
-/* 25/10/2010 :  Creation des fichiers des individus a partir des fichiers menages */
-/*  			On utilise les fichiers Household2001  -2010.dta  en entree        */
-/* 				creation des fichiers ou seuls les menages avec enfants sont retenus*/
+/* 25/10/2010 	: Creation des fichiers des individus à partir des fichiers ménages */
+/*  			: On utilise les fichiers Household2001  -2010.dta  en entrée        */
+/* 				: création des fichiers ou seuls les ménages avec enfants sont retenus*/
+/* 28/11/2012  	: Définition des parents enfants revue avec catarina  On utilise age (18 ans) */
+/* 				: On vérifie les couples parents enfants ont une différence d'age suffisante (>=16 ans)  */
+/* 				: creation d'un fichier avec tous les couples pour un mêmee lag 				*/
 
 
-set more off
+
+set more off 
+pause on
 
 *global root "c:/Chris/progs/catarina/"
 *global root "D:/progs/catarina/"
@@ -20,24 +25,23 @@ cd progs
 forvalues y = 2001/2010 {
 	/* ----  We use the Individual Files    ---- */
 	use ../data/Individ`y'.dta, clear
+	
+	/* Hypothèses sur la famille */
 	drop if nf == 1   /* we keep only families  */
 	gen Status = "Parent"
-	replace Status = "Enfant" if Age<20	
+	replace Status = "Enfant" if Age<18	
 	
 	/* Variables changing with years */
-	gen BMI`y' = BMI
-	gen ihau`y' = ihau
-	gen ipds`y' = ipds
-	gen Age`y' = Age
-	/* cleaning  */
-	di " drop BMI null "
-	count if BMI`y' == 0  
-	di ""
-	drop if BMI`y' == 0  
-	drop BMI ipds ihau Age
+	ren  BMI BMI`y' 
+	ren  ihau ihau`y' 
+	ren  ipds ipds`y' 
+	ren  Age Age`y' 
+	
 	keep nopnltNF Id indiv Sexe nf ana ihau* ipds* BMI* Age* Year20 an Status
-	duplicates drop Id, force       /* on a des doublons avec des BMI différents (mais peu !)*/
+	*duplicates drop Id, force       /* normalement ==0 */
 	sort Id
+	label data "All individuals WITHIN a familly with separate information between parent Child"
+	notes  : Created using FileMakerChild.do (_$S_DATE). 
 	compress
 	save ../data/IndividFam`y', replace
 }
@@ -45,7 +49,7 @@ forvalues y = 2001/2010 {
 
 /* PART 2 : Create sets with BMI difference for consecutive years   -----*/
 /* create files with parents & separate file with parents present for consecutive years   */
-/* create file with couples parents-cnhildren and BMI differences        */
+/* create file with couples parents-children and BMI differences        */
 
 
 /* On a toujours un pb en 2002 avec le BMI */
@@ -54,8 +58,17 @@ forvalues y = 2001/2010 {
 *forvalues y1 = 2010(-1)2002 {
 *local y2 = `y1' -1
 
-forvalues y1 = 2010(-3)2004{
-	local y2 = `y1' -3
+* Variante sur 2 ans de décalalage
+*forvalues y1 = 2010(-2)2003 {
+*local y2 = `y1' -2
+
+/* On automatise la création des différences  (28/11/2012)*/
+
+local lag 2     /* <<<<<<<<<<<< Choice of  lag between two years  */
+
+local yearfin= 2001+`lag'
+forvalues y1 = 2010(-`lag')`yearfin'{
+	local y2 = `y1' -`lag'
 	di ""
 	di " -----    Différence year `y1'  - `y2'   ----------"
 	di ""
@@ -68,59 +81,102 @@ forvalues y1 = 2010(-3)2004{
 	preserve 
 	keep if Status == "Parent"
 	gen DiffP`y1'_`y2' =  BMI`y1'-BMI`y2' if Status == "Parent"
-	gen SexeParent = Sexe
-	label value SexeParent typoSexeNew
-
-	drop Sexe
+	
+	ren Age`y1'  AgeParent`y1'
+	ren Sexe SexeParent 
+	*label value SexeParent typoSexeNew
+	
 	save ../data/IndividParent`y1'_`y2', replace
 	sort nopnlt 
 	restore
 
 	keep if Status == "Enfant"
 	gen DiffE`y1'_`y2' =  BMI`y1'-BMI`y2' if Status == "Enfant"
-	gen SexeEnfant = Sexe
-	label value SexeEnfant typoSexeNew
-	drop Sexe
+	
+	ren Sexe SexeEnfant 
+	ren Age`y1'  AgeEnfant`y1' 
+	*label value SexeEnfant typoSexeNew
+
 	save ../data/IndividEnfant`y1'_`y2', replace
 	
 	joinby nopnltNF using ../data/IndividParent`y1'_`y2'   /* <<<<<< ======= On crée tous les couples possibles   */
 	
+	di ""
+	di " -----    Creation des couples : vérifications "
+	di ""
 	quietly count
-	local foo `r(N)'
+	local Nball `r(N)'
 	
+	gen DiffAge`y1' = AgeParent`y1' - AgeEnfant`y1' 
+	quietly count if DiffAge`y1' <16
+	local noson `r(N)'
+	
+	di " -----    We have `noson' obs (on `Nball' couples) with less than 16 years difference  (removed) "
+	drop if DiffAge`y1' <16
+	
+	quietly count
+	local Nball `r(N)'
 	quietly count if( DiffE`y1'_`y2' != 0 & DiffP`y1'_`y2' != 0)  
 	local spam `r(N)'
 	di ""
-	di " -----    We have `foo' obs. for couples `y1'  - `y2' and only `spam' different from 0  ----------"
+	di " -----    We have now `Nball' obs. for couples `y1' - `y2' and only `spam' BMI different from 0  ----------"
 	di ""
 	
+	/* On réincorpore les information au niveau du ménage, pour l'année y1 pour les régressions  */
 	merge n:1 nopnltNF using ../Sources/menages`y1' , ///
 				keepusing(csp* habi rev* nocom noreg uc*  Region_insee Region Code_Commune foyer) noreport
+				
 	drop if _merge ==2  /* we don't need information form houshold not present */
 	drop _merge			
-	
+
+	label data "All pairwise couples (Child-Parents) with information on BMI's differences"
+	notes  : Created using FileMakerChild.do (_$S_DATE). 
+	compress
 	save ../data/Couples`y1'_`y2', replace
 	
-	/* Some cleaning to avaoid too much files   */
-	erase ../data/IndividEnfant`y1'_`y2'.dta
+	/* Some cleaning to avoid too much files   */
+	erase ../data/IndividEnfant`y1'_`y2'.dta                /* <====== WE CLEAR HERE   */
 	erase ../data/IndividParent`y1'_`y2'.dta
 	
 	
 	/* Stats sur les Différences de BMI (attention on compte les individus plusisuers fois (car couples ici !! ) */
+		
+	di " -----    regress DiffE`y1'_`y2' DiffP`y1'_`y2'   ----------"
 	
 	regress DiffE`y1'_`y2' DiffP`y1'_`y2'   /* Marche */
-	*regress DiffE`y1'_`y2' DiffP`y1'_`y2'   /* Marche aussi */
-	regress DiffE`y1'_`y2' DiffP`y1'_`y2' if( DiffE`y1'_`y2' != 0 & DiffP`y1'_`y2' != 0)   /* marche moins bien */ 
+		
+	di " -----    regress DiffE`y1'_`y2' DiffP`y1'_`y2' but Zero's (either parent or Child) removed  ----------"
 	
+	local Nonzero "( DiffE`y1'_`y2' != 0 & DiffP`y1'_`y2' != 0)"
 	
+	regress DiffE`y1'_`y2' DiffP`y1'_`y2' if `Nonzero'   /* marche moins bien */ 
 	
-	corr DiffE`y1'_`y2' DiffP`y1'_`y2' 
+	* Graphiques
+	
 	twoway lfitci DiffE`y1'_`y2' DiffP`y1'_`y2'  , stdf || scatter DiffE`y1'_`y2' DiffP`y1'_`y2' 
-}
 	
+	*twoway lfitci DiffE`y1'_`y2' DiffP`y1'_`y2' if `Nonzero'   , stdf || scatter DiffE`y1'_`y2' DiffP`y1'_`y2' if `Nonzero' 
+	*corr DiffE`y1'_`y2' DiffP`y1'_`y2'
+	
+	*pause On regarde le graphique (taper q pour reprendre)
+}
 
-*bysort SexeEnfant : regress DiffE10_09 DiffP10_09    /* Marche  pour les filles   !!!!   */
-*bysort SexeParent : regress DiffE10_09 DiffP10_09    /* Marche  pour les papas (mais pas nombreux !)   */
+/* Generation of one unique dataset with all the couples differences */
+
+local yearfin2 = `yearfin' + `lag'   /* On part du fichier de la fin, pas la peine de l'appender 2 fois */
+forvalues y1 = 2010(-`lag')`yearfin2'{
+	local y2 = `y1' -`lag'
+	di "  "
+	di " --- We append now the file Couples`y1'_`y2'.dta ---"
+	quietly append using ../data/Couples`y1'_`y2'
+	count
+	}
+
+compress
+label data "All pairwise couples with `lag' year lag (Child-Parents)"
+notes : Created using FileMaker3.do ($S_DATE). All unique Individuals
+count
+save ../data/Couples2001-2010_Lag`lag', replace	
 
 
 capture log close
