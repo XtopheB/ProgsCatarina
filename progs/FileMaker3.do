@@ -7,8 +7,6 @@
 /* 01/11/2012 : keep all the individuals (not only if age >20  
 			  : Modif def of ID, inserted in individYYYY.dta  */ 
 /* 03/11/2012 : Ajout du calcul du BMI pour les individus de 2001  */
-/* 25/11/2012 : rectification des BMI pour 2002 (tailles == 999)  */
-/* 28/11/2012 : vu avec Catarina. Doublons au niveau NopnltNF Sexe ana (= ID)  */
 
 
 set more off
@@ -28,7 +26,7 @@ log using "$root/progs/logs/FileMaker_$S_DATE.smcl", replace
 
 forvalues y = 2001/2010 {
 	use ../Sources/menages`y'.dta, clear
-	notes drop _dta
+	
 	/*  for 2001 2002 files, wee need to do some stuff*/
 
 	forvalues i = 1/ 14 { 
@@ -67,17 +65,23 @@ forvalues y = 2001/2010 {
 				
 				/* Generation of BMI (ajout 03/11/2012)*/
 				gen Taille`i'= ihau`i'/100
-				gen BMI`i'= . 
-				replace BMI`i'= kgcper`i'/(Taille`i')^2 if kgcper`i' != 0    
+				gen BMI`i'=kgcper`i'/(Taille`i')^2
 								
 				}
 		capture drop Taille*
 		}
-	 if `y' == 2002 {  /*  pb specifiques pour  2002 certain BMI's sont calculés avec des tailles fausses (21/11/2012) */
+	 if `y' == 2002 {  /*  pb specifiques pour  2002  <<<<<<<<<   Tj un PB les BMIS ne sont pas bons  (05/11/2012) */
+		capture drop ihau*
+		capture drop BMI*  /* les BMIs sont faux en 2002 (06/11/2012  */
 		forvalues i = 1/ 11 { 
-			capture replace BMI`i'=. if ipds`i' == 999
-				}
+			capture rename ihad`i' ihau`i'
+			/* Generation of BMI (ajout 03/11/2012)*/
+			gen Taille`i'= ihau`i'/100
+			gen BMI`i' = (kgcper`i'/10)/(Taille`i')^2
 		
+		}
+		
+	 capture drop Taille*
 	 }
 	 if `y'==2010 {  /*  variable ana1, ana2, etc.; doesn't exist    */
 	capture drop ana
@@ -86,16 +90,13 @@ forvalues y = 2001/2010 {
 		}
 	}
 	
-	
+	capture gen BMI=. /* variable BMI doesn't exist in 2001  and 2002  <----- keep in mind !!! */
 	capture gen ana= naip
 	
 	/* For all Years : one declare some values as missing  */ 
 	
 	 forvalues i = 1/ 14 {         /* As much as 14 people are recorded since 2003*/ 
-		/* Validity of BMI's if height or weight is not correct    */
-		capture replace BMI`i'=. if ipds`i' == 999 | ihau`i' <= 0
 		capture replace ihau`i'=. if ihau`i' <= 0 /*  missing are sometimes -1 */
-		
 		}
 	/* keep only relevent variables (17/11/2010: we keep BMI !) */
 	/* variables  revd, icol*, itpo*, itai*, ibas* doesn't exist in 2010  */
@@ -107,7 +108,6 @@ forvalues y = 2001/2010 {
 	/* ----  Creation Of The Household Files  per year  ---- */
 	/* That's the  information we keep at household level */
 	quietly compress
-	label data "File created using FileMaker3.do ($S_DATE). All Households with BMI and CSP"
 	save ../data/Household`y', replace
 /* ----  Creation Of The Individual Files    ---- */
 
@@ -115,13 +115,10 @@ forvalues y = 2001/2010 {
 	/* One line per individual in the same family */
 	
 	/* since we kept BMI at the Household level, we need to drop it now as it changes for individuals over time */
-	capture drop BMI 	/*(17/11/2010)*/
+	capture drop BMI /*(17/11/2010)*/
 	capture drop ana   /* 29/10/2012  */
-	capture drop icsp  /* 28/11/2012  */ 
-	
 	/* a long list of variable that are already defined and that neefd to be removed  */
-	
-	quietly reshape long BMI ihau ipds Sexe ana statut iday imoi icsp /* icolitpo itai ibas */ , i(nopnlt) j(indiv)
+	quietly reshape long BMI ihau ipds Sexe ana statut iday imoi  /* icsp icolitpo itai ibas */ , i(nopnlt) j(indiv)
 
 	label variable ihau "Height (cm)"
 	replace Sexe=(Sexe==1)
@@ -141,24 +138,19 @@ forvalues y = 2001/2010 {
 	label var Age "Age"
 	gen Year20 = ana+20  /* year when people were 20  */
 	label var Year20 "Year of 20" 
-	di " " 
-	di "-------------------"
-	di " Year  `y', creating individual files "
-	di ""
+	
 	/* Now we drop non-complete lines  */
-	drop if ihau == .    /* Beaucoup parce que 11 individus prévus et maj non renseignés */
+	drop if ihau == .
 	drop if Sexe == .
 	drop if ana == .
 	
 
-	di " Duplicates for  `y'  (same nopnltNF Sexe ana )"
-	di""
-	/* Examine and drop the duplicates  ( décidé avec Catarina  27/11/2012) */
-	duplicates report nopnltNF Sexe ana   
-	duplicates drop nopnltNF Sexe ana , force
+	*drop if Age < 20  /* here we drop the children !!*/
 	
-	di " Statistics year `y' "
-	di""
+	/* Examine and drop the duplicates  */
+	duplicates report nopnltNF Sexe ana ihau  /* <---------- change to date of birth rethink (use foyer ?)!!!  */ 
+	duplicates drop nopnltNF Sexe ana ihau, force
+
 	/* Statistics */
 
 	bysort Sexe : sum ihau /* ok with INSEE http://www.insee.fr/fr/themes/document.asp?reg_id=0&id=1954  */
@@ -166,7 +158,7 @@ forvalues y = 2001/2010 {
 
 	*graph box ihau if Sexe==1 ,over(year20)
 	*bysort year20 : sum ihau if Sexe==1
-	*regress ihau Year20 i.Sexe if Year20 >1981 /* OK with INSEE */
+	regress ihau Year20 i.Sexe if Year20 >1981 /* OK with INSEE */
 	
 	/* generation of a unique identifier */
 	tostring nopnltNF , gen(Id)
@@ -175,38 +167,25 @@ forvalues y = 2001/2010 {
 	replace gender="M" if Sexe==1
 	tostring ana, gen(annaiss)
 	replace Id = Id+gender+annaiss
-	
+
 	compress
-	label data "Individual File (year `y' with BMI and personnal information"
-	notes  : Created using FileMaker3.do ($S_DATE). All unique Individuals
-	
 	save ../data/Individ`y', replace
-	*pause  (taper q pour reprendre)
 }
-
-di "--
-di " Creating pooled files (2001-2010)"
-di ""
-
 /* PART 2 : ---- The Complete Household file -----*/
 /* Generation of one unique dataset with all the households */
 
 use ../data/Household2001.dta, clear
 forvalues y = 2002/2010 {
 	quietly append using ../data/Household`y'
-	*duplicates report nopnltNF 
+	duplicates report nopnltNF 
 	count
 }
 	
-compress
-label data "Household File all years with personnal and household information"
-notes  : Created using FileMaker3.do ($S_DATE). No duplicates check
 save ../data/Household2001-2010, replace
 	
 	
 /* PART 3 : ---- The Complete Individual file -----*/
 /* Generation of one unique dataset with all the individuals */
- 
  
 use ../data/Individ2001, clear
  
@@ -216,18 +195,13 @@ forvalues y = 2002/2010 {
 	/* For duplicates, the hypothesis is that :
 	a same Household number, gender, year of birth and height = same individual */
 	
-	duplicates report nopnltNF Sexe ana 
-	duplicates drop nopnltNF Sexe ana , force
+	duplicates report nopnltNF Sexe ana ihau
+	duplicates drop nopnltNF Sexe ana ihau, force
 	count
 	}
 
 order nopnltNF indiv Sexe nf  ihau ipds ana an
 compress
-compress
-label data "Individual File all years with BMI and personnal information"
-notes : Created using FileMaker3.do ($S_DATE). All unique Individuals
-notes : One line = one individual (unique ID per year), no duplicates)
-
 save ../data/IndividAll5, replace
 
 /* Some auxillary checks */
