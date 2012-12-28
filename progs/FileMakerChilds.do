@@ -4,15 +4,19 @@
 /* 28/11/2012  	: Définition des parents enfants revue avec catarina  On utilise age (18 ans) */
 /* 				: On vérifie les couples parents enfants ont une différence d'age suffisante (>=16 ans)  */
 /* 				: creation d'un fichier avec tous les couples pour un mêmee lag 				*/
+/* 				: Information sur les jumeaux en France (environ 9-11/1000), de 1972 à 1989  */
+/* 				: Source http://onlinelibrary.wiley.com/doi/10.1111/j.1471-0528.1993.tb12985.x/abstract */
+/* 11/12/2012	: Suppression des BMI trop faibles (<10) ou trop forts (>50)                            */
+/* 				: Suppression des différences de BMI vraiment fortes (>10 )  <<< à moduler suivant le lag ??   */
 
 
 
 set more off 
 pause on
 
-*global root "c:/Chris/progs/catarina/"
-*global root "D:/progs/catarina/"
-global root "c:/Chris/Zprogs/catarina/"
+
+global root "D:/progs/catarina/"
+*global root "c:/Chris/Zprogs/catarina/"
 
 cd $root
 capture log close
@@ -43,6 +47,8 @@ forvalues y = 2001/2010 {
 	label data "All individuals WITHIN a familly with separate information between parent Child"
 	notes  : Created using FileMakerChild.do (_$S_DATE). 
 	compress
+	/* 11/12/2012 */
+	drop if BMI`y' <10 | BMI`y' >50
 	save ../data/IndividFam`y', replace
 }
 
@@ -64,7 +70,7 @@ forvalues y = 2001/2010 {
 
 /* On automatise la création des différences  (28/11/2012)*/
 
-local lag 2     /* <<<<<<<<<<<< Choice of  lag between two years  */
+local lag 4     /* <<<<<<<<<<<< Choice of  lag between two years  */
 
 local yearfin= 2001+`lag'
 forvalues y1 = 2010(-`lag')`yearfin'{
@@ -107,6 +113,9 @@ forvalues y1 = 2010(-`lag')`yearfin'{
 	quietly count
 	local Nball `r(N)'
 	
+	/* 11 12/2012 */
+	drop if abs(DiffE`y1'_`y2') > 10  | abs(DiffP`y1'_`y2') >10
+	
 	gen DiffAge`y1' = AgeParent`y1' - AgeEnfant`y1' 
 	quietly count if DiffAge`y1' <16
 	local noson `r(N)'
@@ -121,6 +130,8 @@ forvalues y1 = 2010(-`lag')`yearfin'{
 	di ""
 	di " -----    We have now `Nball' obs. for couples `y1' - `y2' and only `spam' BMI different from 0  ----------"
 	di ""
+	
+		
 	
 	/* On réincorpore les information au niveau du ménage, pour l'année y1 pour les régressions  */
 	merge n:1 nopnltNF using ../Sources/menages`y1' , ///
