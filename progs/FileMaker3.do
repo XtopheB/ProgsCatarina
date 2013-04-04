@@ -9,13 +9,14 @@
 /* 03/11/2012 : Ajout du calcul du BMI pour les individus de 2001  */
 /* 25/11/2012 : rectification des BMI pour 2002 (tailles == 999)  */
 /* 28/11/2012 : vu avec Catarina. Doublons au niveau NopnltNF Sexe ana (= ID)  */
+/* 08/01/2013 : Changement typologie Sexe (1 = men, 2 = women )					*/ 
 
 
 set more off
 
 *global root "c:/Chris/progs/catarina/"
-*global root "D:/progs/catarina/"
-global root "c:/Chris/Zprogs/catarina"
+global root "D:/progs/catarina/"
+*global root "c:/Chris/Zprogs/catarina"
 
 cd $root
 capture log close
@@ -130,10 +131,9 @@ forvalues y = 2001/2010 {
 	
 	quietly reshape long BMI ihau ipds Sexe ana statut iday imoi icsp /* icolitpo itai ibas */ , i(nopnlt) j(indiv)
 
-	label variable ihau "Height (cm)"
-	replace Sexe=(Sexe==1)
+	label variable ihau "Height (cm)"	
 	label variable Sexe "Gender"
-	label define typoSexeNew 0 "Women" 1 "Men" 
+	label define typoSexeNew 1 "Men" 2 "Women" 
 	label value Sexe typoSexeNew
 	
 	
@@ -176,7 +176,7 @@ forvalues y = 2001/2010 {
 	/* generation of a unique identifier */
 	tostring nopnltNF , gen(Id)
 	
-	gen gender = "W" if Sexe==0
+	gen gender = "W" if Sexe==2
 	replace gender="M" if Sexe==1
 	tostring ana, gen(annaiss)
 	replace Id = Id+gender+annaiss
@@ -233,7 +233,7 @@ compress
 label data "Individual File all years with BMI and personnal information"
 notes : Created using FileMaker3.do ($S_DATE). All unique Individuals
 notes : One line = one individual (unique ID per year), no duplicates)
-
+numlabel typoSexeNew, add
 save ../data/IndividAll5, replace
 
 log close
